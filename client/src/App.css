@@ -1,0 +1,110 @@
+/* Import Tailwind base styles */
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+
+/* Custom base styles */
+@layer base {
+  html {
+    font-family: 'Inter', sans-serif;
+  }
+  
+  body {
+    background-color: rgb(249 250 251);
+    color: rgb(17 24 39);
+  }
+}
+
+/* Custom component styles */
+@layer components {
+  .btn-primary {
+    background-color: var(--primary-600);
+    color: white;
+    font-weight: 600;
+    padding: 0.75rem 1.5rem;
+    border-radius: 0.5rem;
+    transition: all 200ms;
+    transform: scale(1);
+}
+
+.btn-primary:hover {
+    background-color: var(--primary-700);
+    transform: scale(1.05);
+}
+
+.btn-primary:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--primary-500), 0 0 0 4px white;
+  }
+  
+  .btn-secondary {
+    background-color: white;
+    color: var(--primary-600);
+    font-weight: 600;
+    padding: 0.75rem 1.5rem;
+    border-radius: 0.5rem;
+    border: 2px solid var(--primary-600);
+    transition: all 200ms;
+    transform: scale(1);
+}
+
+.btn-secondary:hover {
+    background-color: rgb(249 250 251);
+    transform: scale(1.05);
+}
+
+.btn-secondary:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--primary-500), 0 0 0 4px white;
+  }
+  
+  .card {
+    background-color: white;
+    border-radius: 0.75rem;
+    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+    border: 1px solid rgb(229 231 235);
+    overflow: hidden;
+    transition-property: all;
+    transition-duration: 200ms;
+}
+
+.card:hover {
+    box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+    transform: translateY(-0.25rem);
+  }
+  
+  .input-field {
+    width: 100%;
+    padding: 1rem 1.5rem;
+    border: 2px solid rgb(209 213 219);
+    border-radius: 0.5rem;
+    transition: border-color 200ms;
+}
+
+.input-field:focus {
+    border-color: var(--primary-500);
+    outline: none;
+  }
+  
+  .container-responsive {
+    max-width: 80rem; /* max-w-7xl */
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 1rem; /* px-4 */
+    padding-right: 1rem;
+}
+
+@media (min-width: 640px) { /* sm: */
+    .container-responsive {
+        padding-left: 1.5rem; /* px-6 */
+        padding-right: 1.5rem;
+    }
+}
+
+@media (min-width: 1024px) { /* lg: */
+    .container-responsive {
+        padding-left: 2rem; /* px-8 */
+        padding-right: 2rem;
+  }
+}
+}
