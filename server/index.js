@@ -190,7 +190,7 @@ const startServer = async () => {
     await sequelize.sync({ force: false });
     console.log('Database models synchronized.');
 
-    server.listen(PORT, () => {
+    server.listen(PORT, '0.0.0.0', () => {
       console.log(`Server is running on port ${PORT}`);
       console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log('Socket.io server initialized');
