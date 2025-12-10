@@ -27,10 +27,10 @@ const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
     origin: [
-      'https://credencuesta-panel.com',
-      'https://www.credencuesta-panel.com',
-      'https://admin.credencuesta-panel.com',
-      'https://api.credencuesta-panel.com',
+      // Production URLs (Render) - UPDATE THESE after deployment
+      'https://dataleaf-client.onrender.com',
+      'https://dataleaf-admin.onrender.com',
+      // Development URLs
       'http://localhost:3000',
       'http://localhost:3001',
       'http://localhost:3002'
@@ -52,10 +52,10 @@ app.set('trust proxy', 1);
 app.use(helmet());
 app.use(cors({
   origin: [
-    'https://credencuesta-panel.com',
-    'https://www.credencuesta-panel.com',
-    'https://admin.credencuesta-panel.com',
-    'https://api.credencuesta-panel.com',
+    // Production URLs (Render) - UPDATE THESE after deployment
+    'https://dataleaf-client.onrender.com',
+    'https://dataleaf-admin.onrender.com',
+    // Development URLs
     'http://localhost:3000',
     'http://localhost:3001',
     'http://localhost:3002'
