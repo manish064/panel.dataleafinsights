@@ -138,7 +138,10 @@ sequelize.query = async function (sql, options = {}) {
     }
 
     console.error('❌ Turso Query Error:', error.message);
+    console.error('   Error Name:', error.name);
+    console.error('   Error Code:', error.code);
     console.error('   Query:', typeof sql === 'string' ? sql : sql.query);
+    console.error('   Full Error:', error);
     throw error;
   }
 };
