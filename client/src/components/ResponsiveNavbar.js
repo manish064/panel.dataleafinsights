@@ -53,8 +53,13 @@ const NavContent = styled.div`
   align-items: center;
 
   @media (max-width: 768px) {
-    padding: 0 1rem;
-    height: 64px;
+    padding: 0 0.75rem;
+    height: 60px;
+  }
+  
+  @media (max-width: 480px) {
+    padding: 0 0.5rem;
+    height: 56px;
   }
 `;
 
@@ -73,6 +78,18 @@ const LogoLink = styled(Link)`
     height: 120px;
     width: auto;
   }
+  
+  @media (max-width: 768px) {
+    img {
+      height: 90px;
+    }
+  }
+  
+  @media (max-width: 480px) {
+    img {
+      height: 70px;
+    }
+  }
 `;
 
 const LogoText = styled.div`
@@ -89,9 +106,14 @@ const LogoText = styled.div`
     color: #0fc179;
   }
   
-  @media (max-width: 640px) {
-    font-size: 1.8rem;
-    left: 110px;
+  @media (max-width: 768px) {
+    font-size: 1.6rem;
+    left: 72px;
+  }
+  
+  @media (max-width: 480px) {
+    font-size: 1.3rem;
+    left: 58px;
   }
 `;
 

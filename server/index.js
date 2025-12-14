@@ -26,15 +26,29 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: [
-      // Production URLs (Render) - UPDATE THESE after deployment
-      'https://dataleaf-client.onrender.com',
-      'https://dataleaf-admin.onrender.com',
-      // Development URLs
-      'http://localhost:3000',
-      'http://localhost:3001',
-      'http://localhost:3002'
-    ],
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+
+      const allowedOrigins = [
+        'https://credencuesta-panel.com',
+        'https://www.credencuesta-panel.com',
+        'https://admin.credencuesta-panel.com',
+        'https://api.credencuesta-panel.com',
+        'http://localhost:3000',
+        'http://localhost:3001',
+        'http://localhost:3002'
+      ];
+
+      // Also allow any Vercel preview/production domains
+      const isVercelDomain = origin.includes('.vercel.app');
+
+      if (allowedOrigins.indexOf(origin) !== -1 || isVercelDomain) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
@@ -51,15 +65,29 @@ app.set('trust proxy', 1);
 // Security middleware
 app.use(helmet());
 app.use(cors({
-  origin: [
-    // Production URLs (Render) - UPDATE THESE after deployment
-    'https://dataleaf-client.onrender.com',
-    'https://dataleaf-admin.onrender.com',
-    // Development URLs
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'http://localhost:3002'
-  ],
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+
+    const allowedOrigins = [
+      'https://credencuesta-panel.com',
+      'https://www.credencuesta-panel.com',
+      'https://admin.credencuesta-panel.com',
+      'https://api.credencuesta-panel.com',
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'http://localhost:3002'
+    ];
+
+    // Also allow any Vercel preview/production domains
+    const isVercelDomain = origin.includes('.vercel.app');
+
+    if (allowedOrigins.indexOf(origin) !== -1 || isVercelDomain) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -183,14 +211,22 @@ app.use('*', (req, res) => {
 // Database connection and server start
 const startServer = async () => {
   try {
-    await sequelize.authenticate();
-    console.log('Database connection established successfully.');
+    console.log('⏳ Authenticating with database...');
+    // Create a timeout for authentication
+    const authPromise = sequelize.authenticate();
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Database authentication timed out')), 10000)
+    );
+
+    await Promise.race([authPromise, timeoutPromise]);
+    console.log('✅ Database connection established successfully.');
 
     // Sync database models
+    console.log('⏳ Synchronizing models...');
     await sequelize.sync({ force: false });
-    console.log('Database models synchronized.');
+    console.log('✅ Database models synchronized.');
 
-    server.listen(PORT, '0.0.0.0', () => {
+    server.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
       console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log('Socket.io server initialized');

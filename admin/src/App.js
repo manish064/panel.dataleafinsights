@@ -22,14 +22,17 @@ import ChangePassword from './pages/ChangePassword';
 import Profile from './pages/Profile';
 
 function App() {
+  // Use /admin basename only in production (Vercel deployment)
+  const basename = process.env.NODE_ENV === 'production' ? '/admin' : '/';
+
   return (
     <AuthProvider>
-      <Router>
+      <Router basename={basename}>
         <div className="App">
           <Routes>
             {/* Public Routes */}
             <Route path="/login" element={<Login />} />
-            
+
             {/* Protected Admin Routes */}
             <Route path="/" element={
               <ProtectedRoute>
@@ -45,11 +48,11 @@ function App() {
               <Route path="settings" element={<ChangePassword />} />
               <Route path="profile" element={<Profile />} />
             </Route>
-            
+
             {/* Catch all route */}
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
-          
+
           <ToastContainer
             position="top-right"
             autoClose={5000}

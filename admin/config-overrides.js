@@ -6,5 +6,11 @@ module.exports = function override(config, env) {
       allowedHosts: 'all'
     };
   }
+
+  // Set public path for admin deployment  
+  if (env === 'production') {
+    config.output.publicPath = '/admin/';
+  }
+
   return config;
 };

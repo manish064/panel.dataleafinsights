@@ -157,58 +157,66 @@ module.exports = (sequelize) => {
   });
 
   // Instance methods
-  Admin.prototype.comparePassword = async function(candidatePassword) {
+  Admin.prototype.comparePassword = async function (candidatePassword) {
     return bcrypt.compare(candidatePassword, this.password);
   };
 
-  Admin.prototype.isLocked = function() {
+  Admin.prototype.isLocked = function () {
     return !!(this.lockUntil && this.lockUntil > Date.now());
   };
 
-  Admin.prototype.incLoginAttempts = async function() {
+  Admin.prototype.incLoginAttempts = async function () {
     // If we have a previous lock that has expired, restart at 1
     if (this.lockUntil && this.lockUntil < Date.now()) {
-      return this.update({
-        loginAttempts: 1,
-        lockUntil: null
-      });
+      await Admin.update(
+        { loginAttempts: 1, lockUntil: null },
+        { where: { id: this.id } }
+      );
+      this.loginAttempts = 1;
+      this.lockUntil = null;
+      return this;
     }
-    
+
     const updates = { loginAttempts: this.loginAttempts + 1 };
-    
+
     // Lock account after 5 failed attempts for 2 hours
     if (this.loginAttempts + 1 >= 5 && !this.isLocked()) {
-      updates.lockUntil = Date.now() + 2 * 60 * 60 * 1000; // 2 hours
+      updates.lockUntil = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 hours
     }
-    
-    return this.update(updates);
+
+    await Admin.update(updates, { where: { id: this.id } });
+    Object.assign(this, updates);
+    return this;
   };
 
-  Admin.prototype.resetLoginAttempts = async function() {
-    return this.update({
+  Admin.prototype.resetLoginAttempts = async function () {
+    const updates = {
       loginAttempts: 0,
       lockUntil: null,
       lastLogin: new Date()
-    });
+    };
+    await Admin.update(updates, { where: { id: this.id } });
+    Object.assign(this, updates);
+    return this;
   };
 
-  Admin.prototype.hasPermission = function(resource, action) {
+  Admin.prototype.hasPermission = function (resource, action) {
     if (this.role === 'super_admin') {
       return true;
     }
-    
+
     if (!this.permissions || !this.permissions[resource]) {
       return false;
     }
-    
+
     return this.permissions[resource].includes(action);
   };
 
-  Admin.prototype.getFullName = function() {
+  Admin.prototype.getFullName = function () {
     return `${this.firstName} ${this.lastName}`;
   };
 
-  Admin.prototype.toJSON = function() {
+  Admin.prototype.toJSON = function () {
     const values = Object.assign({}, this.get());
     delete values.password;
     delete values.twoFactorSecret;
@@ -217,7 +225,7 @@ module.exports = (sequelize) => {
   };
 
   // Class methods
-  Admin.getRoleHierarchy = function() {
+  Admin.getRoleHierarchy = function () {
     return {
       super_admin: 3,
       admin: 2,
@@ -225,7 +233,7 @@ module.exports = (sequelize) => {
     };
   };
 
-  Admin.getDefaultPermissions = function(role) {
+  Admin.getDefaultPermissions = function (role) {
     const permissions = {
       super_admin: {
         users: ['read', 'create', 'update', 'delete'],
@@ -256,7 +264,7 @@ module.exports = (sequelize) => {
         audit_logs: []
       }
     };
-    
+
     return permissions[role] || permissions.moderator;
   };
 

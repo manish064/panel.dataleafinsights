@@ -25,7 +25,11 @@ const PageContainer = styled.div`
   color: #1e293b;
   
   @media (max-width: 768px) {
-    padding: 1rem;
+    padding: 0.75rem;
+  }
+  
+  @media (max-width: 480px) {
+    padding: 0.5rem;
   }
 `;
 
@@ -51,6 +55,19 @@ const HeroCard = styled.div`
     font-size: 0.85rem;
     opacity: 0.9;
     max-width: 600px;
+  }
+  
+  @media (max-width: 480px) {
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    
+    h1 {
+      font-size: 1.1rem;
+    }
+    
+    p {
+      font-size: 0.75rem;
+    }
   }
 
   /* Abstract Pattern */
