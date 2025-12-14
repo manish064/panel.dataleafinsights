@@ -1,5 +1,5 @@
 const express = require('express');
-const { User, UserReward, Reward, SurveyResponse, Survey, WithdrawalRequest, RewardVoucher } = require('../models');
+const { User, UserReward, Reward, SurveyResponse, Survey, WithdrawalRequest, RewardVoucher, turso } = require('../models');
 const { body, validationResult } = require('express-validator');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
@@ -27,7 +27,7 @@ const bankDetailsLimiter = rateLimit({
 // Enhanced input sanitization function
 const sanitizeInput = (input) => {
   if (!input || typeof input !== 'string') return input;
-  
+
   return input
     .trim()
     .replace(/[<>"'&]/g, '') // Remove potentially dangerous characters
@@ -40,11 +40,11 @@ const checkDatabaseHealth = async (sequelize) => {
   const startTime = Date.now();
   await sequelize.authenticate();
   const responseTime = Date.now() - startTime;
-  
+
   if (responseTime > 5000) {
     throw new Error(`Database response time too slow: ${responseTime}ms`);
   }
-  
+
   return responseTime;
 };
 
@@ -52,7 +52,7 @@ const checkDatabaseHealth = async (sequelize) => {
 const authenticateToken = async (req, res, next) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
-    
+
     if (!token) {
       return res.status(401).json({
         success: false,
@@ -85,7 +85,7 @@ router.get('/profile', authenticateToken, async (req, res) => {
   try {
     // Check if user has a password set (before it gets removed by toJSON)
     const hasPassword = req.user.password !== null && req.user.password !== undefined;
-    
+
     res.json({
       success: true,
       user: req.user,
@@ -203,18 +203,20 @@ router.put('/password', authenticateToken, [
 // Get user dashboard stats
 router.get('/dashboard', authenticateToken, async (req, res) => {
   try {
-    // Get survey stats
-    const surveyStats = await SurveyResponse.findAll({
-      where: {
-        userId: req.user.id,
-        isCompleted: true
-      },
-      attributes: [
-        [req.user.sequelize.fn('COUNT', req.user.sequelize.col('id')), 'totalSurveys'],
-        [req.user.sequelize.fn('SUM', req.user.sequelize.col('pointsEarned')), 'totalPointsEarned']
-      ],
-      raw: true
+    // Use raw Turso SQL for aggregates - Sequelize aggregates don't work reliably with custom Turso adapter in production
+    const countResult = await turso.execute({
+      sql: 'SELECT COUNT(*) as count FROM SurveyResponses WHERE userId = ? AND isCompleted = 1',
+      args: [Number(req.user.id)]
     });
+    const totalSurveys = Number(countResult.rows[0]?.count || 0);
+
+    const sumResult = await turso.execute({
+      sql: 'SELECT COALESCE(SUM(pointsEarned), 0) as total FROM SurveyResponses WHERE userId = ? AND isCompleted = 1',
+      args: [Number(req.user.id)]
+    });
+    const totalPointsEarned = Number(sumResult.rows[0]?.total || 0);
+
+    console.log(`[DASHBOARD] User ${req.user.id}: totalSurveys=${totalSurveys}, totalPointsEarned=${totalPointsEarned}`);
 
     // Get recent completed survey responses (last 5)
     const recentCompletedSurveys = await SurveyResponse.findAll({
@@ -260,7 +262,7 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
 
     // Progressive unlock logic: only show the next available survey
     let recentOpenSurveys = [];
-    
+
     if (completedSurveyIds.length === 0) {
       // Show first survey
       recentOpenSurveys = [allSurveys[0]];
@@ -309,8 +311,8 @@ router.get('/dashboard', authenticateToken, async (req, res) => {
       dashboard: {
         user: req.user,
         stats: {
-          totalSurveys: surveyStats[0]?.totalSurveys || 0,
-          totalPointsEarned: surveyStats[0]?.totalPointsEarned || 0,
+          totalSurveys: totalSurveys,
+          totalPointsEarned: totalPointsEarned,
           totalRedemptions: rewardStats[0]?.totalRedemptions || 0,
           totalPointsSpent: rewardStats[0]?.totalPointsSpent || 0,
           totalWithdrawals: withdrawalStats[0]?.totalWithdrawals || 0,
@@ -563,17 +565,17 @@ router.get('/bank-details', authenticateToken, bankDetailsLimiter, async (req, r
   const requestId = `GET-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
   console.log(`🏦 BANK API [${requestId}]: GET /api/users/bank-details - Starting request`);
   console.log(`🏦 BANK API [${requestId}]: User ID: ${req.user.id}, Email: ${req.user.email}`);
-  
+
   try {
     // Check database connection and health
     console.log(`🏦 BANK API [${requestId}]: Checking database connection and health...`);
     const dbResponseTime = await checkDatabaseHealth(req.user.sequelize);
     console.log(`🏦 BANK API [${requestId}]: Database connection verified (${dbResponseTime}ms)`);
-    
+
     // Fetch fresh user data
     console.log(`🏦 BANK API [${requestId}]: Fetching fresh user data from database...`);
     const freshUser = await User.findByPk(req.user.id);
-    
+
     if (!freshUser) {
       console.log(`🏦 BANK API [${requestId}]: User not found in database`);
       return res.status(404).json({
@@ -582,19 +584,19 @@ router.get('/bank-details', authenticateToken, bankDetailsLimiter, async (req, r
         requestId
       });
     }
-    
+
     console.log(`🏦 BANK API [${requestId}]: Raw user bank data:`, {
       accountHolderName: freshUser.accountHolderName,
       accountNumber: freshUser.accountNumber,
       ifscCode: freshUser.ifscCode
     });
-    
+
     const bankDetails = {
       accountHolderName: freshUser.accountHolderName || null,
       accountNumber: freshUser.accountNumber || null,
       ifscCode: freshUser.ifscCode || null
     };
-    
+
     console.log(`🏦 BANK API [${requestId}]: Processed bank details:`, bankDetails);
     console.log(`🏦 BANK API [${requestId}]: GET request completed successfully`);
 
@@ -610,10 +612,10 @@ router.get('/bank-details', authenticateToken, bankDetailsLimiter, async (req, r
       name: error.name,
       code: error.code
     });
-    
+
     let statusCode = 500;
     let errorMessage = 'Internal server error';
-    
+
     if (error.name === 'SequelizeConnectionError') {
       statusCode = 503;
       errorMessage = 'Database connection failed';
@@ -621,7 +623,7 @@ router.get('/bank-details', authenticateToken, bankDetailsLimiter, async (req, r
       statusCode = 504;
       errorMessage = 'Database query timeout';
     }
-    
+
     res.status(statusCode).json({
       success: false,
       message: errorMessage,
@@ -661,9 +663,9 @@ router.put('/bank-details', authenticateToken, bankDetailsLimiter, [
     'authorization': req.headers.authorization ? 'Bearer [PRESENT]' : 'Missing',
     'user-agent': req.headers['user-agent']
   });
-  
+
   const errors = validationResult(req);
-  
+
   if (!errors.isEmpty()) {
     console.log(`🏦 BANK API [${requestId}]: Validation failed:`, errors.array());
     return res.status(400).json({
@@ -673,19 +675,19 @@ router.put('/bank-details', authenticateToken, bankDetailsLimiter, [
       requestId
     });
   }
-  
+
   console.log(`🏦 BANK API [${requestId}]: Validation passed`);
 
   try {
     const { accountHolderName, accountNumber, ifscCode } = req.body;
-    
+
     // Enhanced input sanitization
     const sanitizedData = {
       accountHolderName: accountHolderName ? sanitizeInput(accountHolderName) : null,
       accountNumber: accountNumber ? sanitizeInput(accountNumber) : null,
       ifscCode: ifscCode ? sanitizeInput(ifscCode).toUpperCase() : null
     };
-    
+
     // Additional validation after sanitization
     if (sanitizedData.accountHolderName && sanitizedData.accountHolderName.length < 2) {
       return res.status(400).json({
@@ -694,7 +696,7 @@ router.put('/bank-details', authenticateToken, bankDetailsLimiter, [
         requestId
       });
     }
-    
+
     if (sanitizedData.accountNumber && !/^\d{9,20}$/.test(sanitizedData.accountNumber)) {
       return res.status(400).json({
         success: false,
@@ -702,7 +704,7 @@ router.put('/bank-details', authenticateToken, bankDetailsLimiter, [
         requestId
       });
     }
-    
+
     if (sanitizedData.ifscCode && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(sanitizedData.ifscCode)) {
       return res.status(400).json({
         success: false,
@@ -710,18 +712,18 @@ router.put('/bank-details', authenticateToken, bankDetailsLimiter, [
         requestId
       });
     }
-    
+
     console.log(`🏦 BANK API [${requestId}]: Sanitized data:`, sanitizedData);
-    
+
     // Check database connection and health
     console.log(`🏦 BANK API [${requestId}]: Checking database connection and health...`);
     const dbResponseTime = await checkDatabaseHealth(req.user.sequelize);
     console.log(`🏦 BANK API [${requestId}]: Database connection verified (${dbResponseTime}ms)`);
-    
+
     // Fetch fresh user data
     console.log(`🏦 BANK API [${requestId}]: Fetching user from database...`);
     const user = await User.findByPk(req.user.id);
-    
+
     if (!user) {
       console.log(`🏦 BANK API [${requestId}]: User not found in database`);
       return res.status(404).json({
@@ -730,7 +732,7 @@ router.put('/bank-details', authenticateToken, bankDetailsLimiter, [
         requestId
       });
     }
-    
+
     console.log(`🏦 BANK API [${requestId}]: User found, current bank details:`, {
       accountHolderName: user.accountHolderName,
       accountNumber: user.accountNumber,
@@ -740,16 +742,16 @@ router.put('/bank-details', authenticateToken, bankDetailsLimiter, [
     // Update bank details
     console.log(`🏦 BANK API [${requestId}]: Updating bank details in database...`);
     const updateStartTime = Date.now();
-    
+
     await user.update({
       accountHolderName: sanitizedData.accountHolderName,
       accountNumber: sanitizedData.accountNumber,
       ifscCode: sanitizedData.ifscCode
     });
-    
+
     const updateEndTime = Date.now();
     console.log(`🏦 BANK API [${requestId}]: Database update completed in ${updateEndTime - updateStartTime}ms`);
-    
+
     // Verify the update
     await user.reload();
     console.log(`🏦 BANK API [${requestId}]: Updated bank details verified:`, {
@@ -757,7 +759,7 @@ router.put('/bank-details', authenticateToken, bankDetailsLimiter, [
       accountNumber: user.accountNumber,
       ifscCode: user.ifscCode
     });
-    
+
     const responseData = {
       success: true,
       message: 'Bank details updated successfully',
@@ -769,7 +771,7 @@ router.put('/bank-details', authenticateToken, bankDetailsLimiter, [
       requestId,
       timestamp: new Date().toISOString()
     };
-    
+
     console.log(`🏦 BANK API [${requestId}]: PUT request completed successfully`);
     console.log(`🏦 BANK API [${requestId}]: Response data:`, responseData);
 
@@ -782,10 +784,10 @@ router.put('/bank-details', authenticateToken, bankDetailsLimiter, [
       code: error.code,
       sql: error.sql
     });
-    
+
     let statusCode = 500;
     let errorMessage = 'Internal server error';
-    
+
     if (error.name === 'SequelizeConnectionError') {
       statusCode = 503;
       errorMessage = 'Database connection failed';
@@ -799,7 +801,7 @@ router.put('/bank-details', authenticateToken, bankDetailsLimiter, [
       statusCode = 409;
       errorMessage = 'Duplicate data conflict';
     }
-    
+
     res.status(statusCode).json({
       success: false,
       message: errorMessage,
@@ -819,7 +821,7 @@ router.post('/withdrawal-request', authenticateToken, [
   const requestId = `WD-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
   console.log(`💰 WITHDRAWAL API [${requestId}]: POST /api/users/withdrawal-request - Starting request`);
   console.log(`💰 WITHDRAWAL API [${requestId}]: User ID: ${req.user.id}, Email: ${req.user.email}`);
-  
+
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -875,7 +877,7 @@ router.post('/withdrawal-request', authenticateToken, [
     };
 
     console.log(`💰 WITHDRAWAL API [${requestId}]: Creating withdrawal request...`);
-    
+
     // Create withdrawal request
     const withdrawalRequest = await WithdrawalRequest.create({
       userId: user.id,
@@ -945,31 +947,31 @@ router.get('/withdrawal-history', authenticateToken, async (req, res) => {
   const requestId = `WH-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
   console.log(`📋 WITHDRAWAL HISTORY API [${requestId}]: GET /api/users/withdrawal-history - Starting request`);
   console.log(`📋 WITHDRAWAL HISTORY API [${requestId}]: User ID: ${req.user.id}, Email: ${req.user.email}`);
-  
+
   try {
     const { page = 1, limit = 10, sortBy = 'requestDate', sortOrder = 'DESC', statusFilter } = req.query;
     const offset = (page - 1) * limit;
-    
+
     console.log(`📋 WITHDRAWAL HISTORY API [${requestId}]: Query params - page: ${page}, limit: ${limit}, sortBy: ${sortBy}, sortOrder: ${sortOrder}, statusFilter: ${statusFilter}`);
-    
+
     // Validate sort parameters
     const allowedSortFields = ['requestDate', 'amount', 'status', 'processedDate'];
     const allowedSortOrders = ['ASC', 'DESC'];
-    
+
     const validSortBy = allowedSortFields.includes(sortBy) ? sortBy : 'requestDate';
     const validSortOrder = allowedSortOrders.includes(sortOrder.toUpperCase()) ? sortOrder.toUpperCase() : 'DESC';
-    
+
     console.log(`📋 WITHDRAWAL HISTORY API [${requestId}]: Using validated sort - ${validSortBy} ${validSortOrder}`);
-    
+
     // Check database connection and health
     const dbResponseTime = await checkDatabaseHealth(req.user.sequelize);
     console.log(`📋 WITHDRAWAL HISTORY API [${requestId}]: Database connection verified (${dbResponseTime}ms)`);
-    
+
     // Build where clause with optional status filtering
     const whereClause = {
       userId: req.user.id
     };
-    
+
     // Add status filter if provided
     if (statusFilter) {
       const validStatuses = ['pending', 'approved', 'rejected', 'processed'];
@@ -980,7 +982,7 @@ router.get('/withdrawal-history', authenticateToken, async (req, res) => {
         console.log(`📋 WITHDRAWAL HISTORY API [${requestId}]: Invalid status filter: ${statusFilter}, ignoring`);
       }
     }
-    
+
     // Fetch withdrawal requests with pagination
     const withdrawalRequests = await WithdrawalRequest.findAndCountAll({
       where: whereClause,
@@ -1000,9 +1002,9 @@ router.get('/withdrawal-history', authenticateToken, async (req, res) => {
       offset: parseInt(offset),
       order: [[validSortBy, validSortOrder]]
     });
-    
+
     console.log(`📋 WITHDRAWAL HISTORY API [${requestId}]: Found ${withdrawalRequests.count} total withdrawal requests, returning ${withdrawalRequests.rows.length} for current page`);
-    
+
     // Format the response data
     const formattedRequests = withdrawalRequests.rows.map(request => ({
       id: request.id,
@@ -1016,7 +1018,7 @@ router.get('/withdrawal-history', authenticateToken, async (req, res) => {
       createdAt: request.createdAt,
       updatedAt: request.updatedAt
     }));
-    
+
     const responseData = {
       success: true,
       withdrawalHistory: formattedRequests,
@@ -1039,20 +1041,20 @@ router.get('/withdrawal-history', authenticateToken, async (req, res) => {
       requestId,
       timestamp: new Date().toISOString()
     };
-    
+
     console.log(`📋 WITHDRAWAL HISTORY API [${requestId}]: Request completed successfully`);
     res.json(responseData);
-    
+
   } catch (error) {
     console.error(`📋 WITHDRAWAL HISTORY API [${requestId}]: Request failed:`, {
       message: error.message,
       stack: error.stack,
       name: error.name
     });
-    
+
     let statusCode = 500;
     let errorMessage = 'Internal server error';
-    
+
     if (error.name === 'SequelizeConnectionError') {
       statusCode = 503;
       errorMessage = 'Database connection failed';
@@ -1063,7 +1065,7 @@ router.get('/withdrawal-history', authenticateToken, async (req, res) => {
       statusCode = 400;
       errorMessage = 'Database validation failed';
     }
-    
+
     res.status(statusCode).json({
       success: false,
       message: errorMessage,
