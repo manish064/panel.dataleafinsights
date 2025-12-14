@@ -67,8 +67,11 @@ module.exports = (sequelize) => {
       allowNull: true
     },
     method: {
-      type: DataTypes.ENUM('GET', 'POST', 'PUT', 'PATCH', 'DELETE'),
-      allowNull: true
+      type: DataTypes.STRING,
+      allowNull: true,
+      validate: {
+        isIn: [['GET', 'POST', 'PUT', 'PATCH', 'DELETE']]
+      }
     },
     endpoint: {
       type: DataTypes.STRING,
@@ -83,25 +86,76 @@ module.exports = (sequelize) => {
       }
     },
     level: {
-      type: DataTypes.ENUM('info', 'warning', 'error', 'critical'),
+      type: DataTypes.STRING,
       allowNull: false,
-      defaultValue: 'info'
+      defaultValue: 'info',
+      validate: {
+        isIn: [['info', 'warning', 'error', 'critical']]
+      }
     },
     description: {
       type: DataTypes.TEXT,
       allowNull: true
     },
     oldValues: {
-      type: DataTypes.JSON,
-      allowNull: true
+      type: DataTypes.TEXT,
+      allowNull: true,
+      get() {
+        const rawValue = this.getDataValue('oldValues');
+        if (!rawValue) return null;
+        try {
+          return typeof rawValue === 'string' ? JSON.parse(rawValue) : rawValue;
+        } catch (e) {
+          return rawValue;
+        }
+      },
+      set(value) {
+        if (value && typeof value === 'object') {
+          this.setDataValue('oldValues', JSON.stringify(value));
+        } else {
+          this.setDataValue('oldValues', value);
+        }
+      }
     },
     newValues: {
-      type: DataTypes.JSON,
-      allowNull: true
+      type: DataTypes.TEXT,
+      allowNull: true,
+      get() {
+        const rawValue = this.getDataValue('newValues');
+        if (!rawValue) return null;
+        try {
+          return typeof rawValue === 'string' ? JSON.parse(rawValue) : rawValue;
+        } catch (e) {
+          return rawValue;
+        }
+      },
+      set(value) {
+        if (value && typeof value === 'object') {
+          this.setDataValue('newValues', JSON.stringify(value));
+        } else {
+          this.setDataValue('newValues', value);
+        }
+      }
     },
     metadata: {
-      type: DataTypes.JSON,
-      allowNull: true
+      type: DataTypes.TEXT,
+      allowNull: true,
+      get() {
+        const rawValue = this.getDataValue('metadata');
+        if (!rawValue) return null;
+        try {
+          return typeof rawValue === 'string' ? JSON.parse(rawValue) : rawValue;
+        } catch (e) {
+          return rawValue;
+        }
+      },
+      set(value) {
+        if (value && typeof value === 'object') {
+          this.setDataValue('metadata', JSON.stringify(value));
+        } else {
+          this.setDataValue('metadata', value);
+        }
+      }
     },
     sessionId: {
       type: DataTypes.STRING,
@@ -122,9 +176,25 @@ module.exports = (sequelize) => {
       allowNull: true
     },
     tags: {
-      type: DataTypes.JSON,
+      type: DataTypes.TEXT,
       allowNull: true,
-      defaultValue: []
+      defaultValue: '[]',
+      get() {
+        const rawValue = this.getDataValue('tags');
+        if (!rawValue) return [];
+        try {
+          return typeof rawValue === 'string' ? JSON.parse(rawValue) : rawValue;
+        } catch (e) {
+          return [];
+        }
+      },
+      set(value) {
+        if (Array.isArray(value)) {
+          this.setDataValue('tags', JSON.stringify(value));
+        } else {
+          this.setDataValue('tags', value || '[]');
+        }
+      }
     }
   }, {
     timestamps: true,
@@ -164,7 +234,7 @@ module.exports = (sequelize) => {
   });
 
   // Class methods for creating audit logs
-  AuditLog.logAdminAction = async function({
+  AuditLog.logAdminAction = async function ({
     action,
     resource,
     resourceId = null,
@@ -220,7 +290,7 @@ module.exports = (sequelize) => {
     }
   };
 
-  AuditLog.logUserAction = async function({
+  AuditLog.logUserAction = async function ({
     action,
     resource,
     resourceId = null,
@@ -267,7 +337,7 @@ module.exports = (sequelize) => {
     }
   };
 
-  AuditLog.logSystemEvent = async function({
+  AuditLog.logSystemEvent = async function ({
     action,
     resource,
     resourceId = null,
@@ -297,7 +367,7 @@ module.exports = (sequelize) => {
   };
 
   // Query helpers
-  AuditLog.getRecentActivity = async function(limit = 50) {
+  AuditLog.getRecentActivity = async function (limit = 50) {
     return await this.findAll({
       limit,
       order: [['createdAt', 'DESC']],
@@ -316,9 +386,9 @@ module.exports = (sequelize) => {
     });
   };
 
-  AuditLog.getStatistics = async function(startDate = null, endDate = null) {
+  AuditLog.getStatistics = async function (startDate = null, endDate = null) {
     const whereClause = {};
-    
+
     if (startDate && endDate) {
       whereClause.createdAt = {
         [sequelize.Sequelize.Op.between]: [startDate, endDate]

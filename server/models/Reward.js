@@ -16,8 +16,11 @@ module.exports = (sequelize) => {
       allowNull: true
     },
     type: {
-      type: DataTypes.ENUM('voucher', 'cash', 'gift_card', 'product'),
-      allowNull: false
+      type: DataTypes.STRING,
+      allowNull: false,
+      validate: {
+        isIn: [['voucher', 'cash', 'gift_card', 'product']]
+      }
     },
     brand: {
       type: DataTypes.STRING,
