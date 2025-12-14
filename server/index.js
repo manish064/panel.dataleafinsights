@@ -9,6 +9,7 @@ require('dotenv').config();
 const authRoutes = require('./routes/auth');
 const surveyRoutes = require('./routes/surveys');
 const userRoutes = require('./routes/users');
+const withdrawalV2Routes = require('./routes/withdrawalV2');
 
 // Admin routes
 const adminRoutes = require('./routes/admin');
@@ -25,6 +26,9 @@ const { sequelize } = require('./models');
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  transports: ['websocket', 'polling'],
   cors: {
     origin: function (origin, callback) {
       // Allow requests with no origin (like mobile apps or curl requests)
@@ -177,6 +181,7 @@ app.use((req, res, next) => {
 // API routes (for api.credencuesta-panel.com)
 app.use('/auth', authRoutes);
 app.use('/surveys', surveyRoutes);
+app.use('/users', withdrawalV2Routes); // V2 withdrawal with raw SQL (must be before userRoutes)
 app.use('/users', userRoutes);
 
 // Admin API routes (for admin.credencuesta-panel.com)
