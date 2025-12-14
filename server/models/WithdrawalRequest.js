@@ -23,13 +23,32 @@ module.exports = (sequelize) => {
       }
     },
     status: {
-      type: DataTypes.ENUM('pending', 'approved', 'rejected', 'processed'),
-      defaultValue: 'pending'
+      type: DataTypes.STRING,
+      defaultValue: 'pending',
+      validate: {
+        isIn: [['pending', 'approved', 'rejected', 'processed']]
+      }
     },
     bankDetails: {
-      type: DataTypes.JSON,
+      type: DataTypes.TEXT,
       allowNull: false,
-      comment: 'Snapshot of bank details at time of request'
+      comment: 'Snapshot of bank details at time of request (JSON string)',
+      get() {
+        const rawValue = this.getDataValue('bankDetails');
+        if (!rawValue) return null;
+        try {
+          return typeof rawValue === 'string' ? JSON.parse(rawValue) : rawValue;
+        } catch (e) {
+          return rawValue;
+        }
+      },
+      set(value) {
+        if (typeof value === 'object') {
+          this.setDataValue('bankDetails', JSON.stringify(value));
+        } else {
+          this.setDataValue('bankDetails', value);
+        }
+      }
     },
     requestDate: {
       type: DataTypes.DATE,
