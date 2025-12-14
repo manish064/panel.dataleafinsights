@@ -18,10 +18,10 @@ router.get('/', authenticateAdmin, requirePermission('rewards', 'read'), async (
       minPoints = '',
       maxPoints = ''
     } = req.query;
-    
+
     const offset = (page - 1) * limit;
     const whereClause = {};
-    
+
     // Search filter
     if (search) {
       whereClause[Op.or] = [
@@ -29,12 +29,12 @@ router.get('/', authenticateAdmin, requirePermission('rewards', 'read'), async (
         { description: { [Op.like]: `%${search}%` } }
       ];
     }
-    
+
     // Type filter
     if (type) {
       whereClause.type = type;
     }
-    
+
     // Status filter
     if (status) {
       if (status === 'active') {
@@ -43,7 +43,7 @@ router.get('/', authenticateAdmin, requirePermission('rewards', 'read'), async (
         whereClause.isActive = false;
       }
     }
-    
+
     // Points range filter
     if (minPoints || maxPoints) {
       whereClause.pointsCost = {};
@@ -54,7 +54,7 @@ router.get('/', authenticateAdmin, requirePermission('rewards', 'read'), async (
         whereClause.pointsCost[Op.lte] = parseInt(maxPoints);
       }
     }
-    
+
     const { count, rows: rewards } = await Reward.findAndCountAll({
       where: whereClause,
       limit: parseInt(limit),
@@ -68,7 +68,7 @@ router.get('/', authenticateAdmin, requirePermission('rewards', 'read'), async (
         }
       ]
     });
-    
+
     // Calculate additional stats for each reward
     const rewardsWithStats = rewards.map(reward => {
       const userRewards = reward.UserRewards || [];
@@ -76,7 +76,7 @@ router.get('/', authenticateAdmin, requirePermission('rewards', 'read'), async (
       const pendingRedemptions = userRewards.filter(ur => ur.status === 'pending').length;
       const completedRedemptions = userRewards.filter(ur => ur.status === 'completed').length;
       const rejectedRedemptions = userRewards.filter(ur => ur.status === 'rejected').length;
-      
+
       return {
         id: reward.id,
         name: reward.name,
@@ -100,7 +100,7 @@ router.get('/', authenticateAdmin, requirePermission('rewards', 'read'), async (
         rejectedRedemptions
       };
     });
-    
+
     res.json({
       success: true,
       data: {
@@ -127,7 +127,7 @@ router.get('/stats', authenticateAdmin, requirePermission('rewards', 'read'), as
   try {
     const now = new Date();
     const last30Days = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    
+
     const [totalRewards, activeRewards, inactiveRewards, newRewards, totalRedemptions, pendingRedemptions] = await Promise.all([
       Reward.count(),
       Reward.count({ where: { isActive: true } }),
@@ -136,7 +136,7 @@ router.get('/stats', authenticateAdmin, requirePermission('rewards', 'read'), as
       UserReward.count(),
       UserReward.count({ where: { status: 'pending' } })
     ]);
-    
+
     // Get top rewards by redemption count
     const topRewards = await Reward.findAll({
       include: [
@@ -149,7 +149,7 @@ router.get('/stats', authenticateAdmin, requirePermission('rewards', 'read'), as
       limit: 5,
       order: [['createdAt', 'DESC']]
     });
-    
+
     const topRewardsWithStats = topRewards.map(reward => ({
       id: reward.id,
       name: reward.name,
@@ -157,7 +157,7 @@ router.get('/stats', authenticateAdmin, requirePermission('rewards', 'read'), as
       pointsCost: reward.pointsCost,
       redemptionCount: reward.UserRewards ? reward.UserRewards.length : 0
     })).sort((a, b) => b.redemptionCount - a.redemptionCount);
-    
+
     res.json({
       success: true,
       data: {
@@ -297,7 +297,7 @@ router.post('/:id/stock/sync', authenticateAdmin, requirePermission('rewards', '
 router.get('/:id', authenticateAdmin, requirePermission('rewards', 'read'), async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const reward = await Reward.findByPk(id, {
       include: [
         {
@@ -311,14 +311,14 @@ router.get('/:id', authenticateAdmin, requirePermission('rewards', 'read'), asyn
         }
       ]
     });
-    
+
     if (!reward) {
       return res.status(404).json({
         success: false,
         message: 'Reward not found'
       });
     }
-    
+
     res.json({
       success: true,
       data: {
@@ -421,7 +421,7 @@ router.post('/:id/vouchers/upload', authenticateAdmin, requirePermission('reward
 });
 
 // Create new reward
-router.post('/', authenticateAdmin, requirePermission('rewards', 'create'), logAdminAction('CREATE_REWARD', 'reward'), async (req, res) => {
+router.post('/', authenticateAdmin, requirePermission('rewards', 'create'), async (req, res) => {
   try {
     const {
       name,
@@ -446,14 +446,14 @@ router.post('/', authenticateAdmin, requirePermission('rewards', 'create'), logA
       isActive = true,
       voucherCodes
     } = req.body;
-    
+
     if (!name || !description || !type || !pointsCost) {
       return res.status(400).json({
         success: false,
         message: 'Name, description, type, and points cost are required'
       });
     }
-    
+
     // If reward type requires vouchers, enforce manual codes and transactional creation
     if (['gift_card', 'voucher'].includes(type)) {
       const expectedStock = stockQuantity ? parseInt(stockQuantity) : (totalAvailable ? parseInt(totalAvailable) : null);
@@ -558,7 +558,7 @@ router.post('/', authenticateAdmin, requirePermission('rewards', 'create'), logA
       brand: brand || provider || null,
       category: category || null
     });
-    
+
     return res.status(201).json({
       success: true,
       message: 'Reward created successfully',
@@ -598,16 +598,16 @@ router.put('/:id', authenticateAdmin, requirePermission('rewards', 'update'), lo
       termsAndConditions,
       isActive
     } = req.body;
-    
+
     const reward = await Reward.findByPk(id);
-    
+
     if (!reward) {
       return res.status(404).json({
         success: false,
         message: 'Reward not found'
       });
     }
-    
+
     // Store original data for audit log
     req.originalData = {
       name: reward.name,
@@ -624,7 +624,7 @@ router.put('/:id', authenticateAdmin, requirePermission('rewards', 'update'), lo
       termsAndConditions: reward.termsAndConditions,
       isActive: reward.isActive
     };
-    
+
     const updatedReward = await reward.update({
       name: name || reward.name,
       description: description || reward.description,
@@ -640,7 +640,7 @@ router.put('/:id', authenticateAdmin, requirePermission('rewards', 'update'), lo
       termsAndConditions: termsAndConditions || reward.termsAndConditions,
       isActive: isActive !== undefined ? isActive : reward.isActive
     });
-    
+
     res.json({
       success: true,
       message: 'Reward updated successfully',
@@ -661,27 +661,27 @@ router.put('/:id', authenticateAdmin, requirePermission('rewards', 'update'), lo
 router.post('/:id/activate', authenticateAdmin, requirePermission('rewards', 'update'), logAdminAction('ACTIVATE_REWARD', 'reward'), async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const reward = await Reward.findByPk(id);
-    
+
     if (!reward) {
       return res.status(404).json({
         success: false,
         message: 'Reward not found'
       });
     }
-    
+
     if (reward.isActive === true) {
       return res.status(400).json({
         success: false,
         message: 'Reward is already active'
       });
     }
-    
+
     req.originalData = { isActive: reward.isActive };
-    
+
     await reward.update({ isActive: true });
-    
+
     res.json({
       success: true,
       message: 'Reward activated successfully'
@@ -699,20 +699,20 @@ router.post('/:id/activate', authenticateAdmin, requirePermission('rewards', 'up
 router.post('/:id/deactivate', authenticateAdmin, requirePermission('rewards', 'update'), logAdminAction('DEACTIVATE_REWARD', 'reward'), async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const reward = await Reward.findByPk(id);
-    
+
     if (!reward) {
       return res.status(404).json({
         success: false,
         message: 'Reward not found'
       });
     }
-    
+
     req.originalData = { isActive: reward.isActive };
-    
+
     await reward.update({ isActive: false });
-    
+
     res.json({
       success: true,
       message: 'Reward deactivated successfully'
@@ -730,16 +730,16 @@ router.post('/:id/deactivate', authenticateAdmin, requirePermission('rewards', '
 router.delete('/:id', authenticateAdmin, requirePermission('rewards', 'delete'), logAdminAction('DELETE_REWARD', 'reward'), async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const reward = await Reward.findByPk(id);
-    
+
     if (!reward) {
       return res.status(404).json({
         success: false,
         message: 'Reward not found'
       });
     }
-    
+
     // Only block deletion if there are pending redemptions
     const pendingCount = await UserReward.count({ where: { rewardId: id, status: 'pending' } });
     if (pendingCount > 0) {
@@ -748,12 +748,12 @@ router.delete('/:id', authenticateAdmin, requirePermission('rewards', 'delete'),
         message: 'Cannot delete reward with pending redemptions. Deactivate instead.'
       });
     }
-    
+
     // Store original data for audit log
     req.originalData = reward.toJSON();
-    
+
     await reward.destroy();
-    
+
     res.json({
       success: true,
       message: 'Reward deleted successfully'
@@ -773,21 +773,21 @@ router.get('/:id/redemptions', authenticateAdmin, requirePermission('rewards', '
     const { id } = req.params;
     const { page = 1, limit = 10, status = '' } = req.query;
     const offset = (page - 1) * limit;
-    
+
     const reward = await Reward.findByPk(id);
-    
+
     if (!reward) {
       return res.status(404).json({
         success: false,
         message: 'Reward not found'
       });
     }
-    
+
     const whereClause = { rewardId: id };
     if (status) {
       whereClause.status = status;
     }
-    
+
     const { count, rows: redemptions } = await UserReward.findAndCountAll({
       where: whereClause,
       include: [{
@@ -798,7 +798,7 @@ router.get('/:id/redemptions', authenticateAdmin, requirePermission('rewards', '
       offset: parseInt(offset),
       order: [['createdAt', 'DESC']]
     });
-    
+
     res.json({
       success: true,
       data: {
@@ -832,7 +832,7 @@ router.put('/redemptions/:redemptionId', authenticateAdmin, requirePermission('r
   try {
     const { redemptionId } = req.params;
     const { status, notes, voucherCode, deliveryMethod } = req.body;
-    
+
     const allowedInputStatuses = ['pending', 'completed', 'rejected', 'processing', 'delivered', 'expired', 'cancelled'];
     if (!allowedInputStatuses.includes(status)) {
       return res.status(400).json({
@@ -840,7 +840,7 @@ router.put('/redemptions/:redemptionId', authenticateAdmin, requirePermission('r
         message: 'Invalid status. Allowed: pending, processing, delivered, expired, cancelled, completed, rejected'
       });
     }
-    
+
     const modelStatusMap = {
       pending: 'pending',
       processing: 'processing',
@@ -850,7 +850,7 @@ router.put('/redemptions/:redemptionId', authenticateAdmin, requirePermission('r
       completed: 'delivered',
       rejected: 'cancelled'
     };
-    
+
     const redemption = await UserReward.findByPk(redemptionId, {
       include: [
         { model: User, attributes: ['id', 'firstName', 'lastName', 'email'] },
@@ -858,19 +858,19 @@ router.put('/redemptions/:redemptionId', authenticateAdmin, requirePermission('r
         { model: Reward, attributes: ['id', 'name', 'pointsCost', 'type'] }
       ]
     });
-    
+
     if (!redemption) {
       return res.status(404).json({
         success: false,
         message: 'Redemption not found'
       });
     }
-    
+
     req.originalData = {
       status: redemption.status,
       notes: redemption.notes
     };
-    
+
     // Auto-assign voucher if delivering and no voucherCode provided
     let finalVoucherCode = voucherCode;
     const targetStatus = modelStatusMap[status];
@@ -949,7 +949,7 @@ router.put('/redemptions/:redemptionId', authenticateAdmin, requirePermission('r
       deliveredAt: targetStatus === 'delivered' ? new Date() : redemption.deliveredAt,
       processedAt: targetStatus !== 'pending' ? new Date() : null
     });
-    
+
     res.json({
       success: true,
       message: 'Redemption status updated successfully',
@@ -1035,7 +1035,7 @@ router.get('/export/csv', authenticateAdmin, requirePermission('rewards', 'read'
       ],
       order: [['createdAt', 'DESC']]
     });
-    
+
     const csvHeader = 'ID,Name,Description,Type,Points Cost,Cash Value,Currency,Stock Quantity,Max Redemptions Per User,Active,Total Redemptions,Created At\n';
     const csvData = rewards.map(reward => {
       const totalRedemptions = reward.UserRewards ? reward.UserRewards.length : 0;
@@ -1054,7 +1054,7 @@ router.get('/export/csv', authenticateAdmin, requirePermission('rewards', 'read'
         reward.createdAt
       ].join(',');
     }).join('\n');
-    
+
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename=rewards.csv');
     res.send(csvHeader + csvData);
