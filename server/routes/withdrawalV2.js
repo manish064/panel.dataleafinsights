@@ -4,7 +4,7 @@ const { body, validationResult } = require('express-validator');
 
 const router = express.Router();
 
-// JWT authentication middleware (same as in users.js)
+// JWT authentication middleware
 const authenticateToken = async (req, res, next) => {
     try {
         const authHeader = req.headers.authorization;
@@ -35,13 +35,13 @@ router.post('/withdrawal-request', authenticateToken, [
         .withMessage('Withdrawal amount must be at least 100 points')
 ], async (req, res) => {
     const requestId = `WD-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-    console.log(`💰 WITHDRAWAL V2 API [${requestId}]: POST /api/users/withdrawal-request - Starting request`);
-    console.log(`💰 WITHDRAWAL V2 API [${requestId}]: User ID: ${req.user.id}, Email: ${req.user.email}`);
+    console.log(`WITHDRAWAL V2 [${requestId}]: POST /users/withdrawal-request - Starting`);
+    console.log(`WITHDRAWAL V2 [${requestId}]: User ID: ${req.user.id}`);
 
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            console.log(`💰 WITHDRAWAL V2 API [${requestId}]: Validation failed:`, errors.array());
+            console.log(`WITHDRAWAL V2 [${requestId}]: Validation failed`);
             return res.status(400).json({
                 success: false,
                 message: 'Validation failed',
@@ -51,22 +51,16 @@ router.post('/withdrawal-request', authenticateToken, [
         }
 
         const { amount } = req.body;
-        console.log(`💰 WITHDRAWAL V2 API [${requestId}]: Withdrawal amount: ${amount}`);
+        console.log(`WITHDRAWAL V2 [${requestId}]: Amount: ${amount}`);
 
         // Fetch fresh user data
         const user = await User.findByPk(req.user.id);
         if (!user) {
-            console.log(`💰 WITHDRAWAL V2 API [${requestId}]: User not found`);
-            return res.status(404).json({
-                success: false,
-                message: 'User not found',
-                requestId
-            });
+            return res.status(404).json({ success: false, message: 'User not found', requestId });
         }
 
-        // Check if user has complete bank details
+        // Check bank details
         if (!user.accountHolderName || !user.accountNumber || !user.ifscCode) {
-            console.log(`💰 WITHDRAWAL V2 API [${requestId}]: Incomplete bank details`);
             return res.status(400).json({
                 success: false,
                 message: 'Please complete your bank details before making a withdrawal request',
@@ -74,9 +68,8 @@ router.post('/withdrawal-request', authenticateToken, [
             });
         }
 
-        // Check if user has sufficient points
+        // Check points
         if (user.points < amount) {
-            console.log(`💰 WITHDRAWAL V2 API [${requestId}]: Insufficient points. User has: ${user.points}, Requested: ${amount}`);
             return res.status(400).json({
                 success: false,
                 message: `Insufficient points. You have ${user.points} points available`,
@@ -84,70 +77,63 @@ router.post('/withdrawal-request', authenticateToken, [
             });
         }
 
-        // Create bank details snapshot
-        const bankDetailsSnapshot = {
+        // Bank details snapshot
+        const bankDetails = {
             accountHolderName: user.accountHolderName,
             accountNumber: user.accountNumber,
             ifscCode: user.ifscCode,
             capturedAt: new Date().toISOString()
         };
 
-        console.log(`💰 WITHDRAWAL V2 API [${requestId}]: Creating withdrawal request with RAW SQL...`);
+        console.log(`WITHDRAWAL V2 [${requestId}]: Creating withdrawal with RAW SQL...`);
 
-        // Use RAW SQL via Turso client for guaranteed compatibility
-        const bankDetailsJson = JSON.stringify(bankDetailsSnapshot).replace(/'/g, "''");
-        const requestDate = new Date().toISOString();
-        const createdAt = new Date().toISOString();
-        const updatedAt = new Date().toISOString();
+        // Single-line SQL for Turso
+        const bankJson = JSON.stringify(bankDetails).replace(/'/g, "''");
+        const now = new Date().toISOString();
 
-        const insertSql = `INSERT INTO "WithdrawalRequests" 
-      ("userId", "amount", "status", "bankDetails", "requestDate", "createdAt", "updatedAt")
-      VALUES (${user.id}, ${amount}, 'pending', '${bankDetailsJson}', '${requestDate}', '${createdAt}', '${updatedAt}')`;
+        const sql = `INSERT INTO WithdrawalRequests (userId, amount, status, bankDetails, requestDate, createdAt, updatedAt) VALUES (${user.id}, ${amount}, 'pending', '${bankJson}', '${now}', '${now}', '${now}')`;
 
-        console.log(`💰 WITHDRAWAL V2 API [${requestId}]: Executing INSERT via Turso...`);
-        const result = await turso.execute(insertSql);
+        console.log(`WITHDRAWAL V2 [${requestId}]: Executing SQL...`);
+        console.log(`WITHDRAWAL V2 [${requestId}]: SQL preview: INSERT INTO WithdrawalRequests...`);
+
+        const result = await turso.execute(sql);
 
         const withdrawalId = result.lastInsertRowid ? Number(result.lastInsertRowid) : 0;
-        console.log(`💰 WITHDRAWAL V2 API [${requestId}]: INSERT successful - ID: ${withdrawalId}`);
+        console.log(`WITHDRAWAL V2 [${requestId}]: INSERT OK - ID: ${withdrawalId}`);
 
-        // Deduct points from user account using raw SQL for consistency
-        console.log(`💰 WITHDRAWAL V2 API [${requestId}]: Deducting ${amount} points from user account...`);
-        const updateSql = `UPDATE "Users" SET "points" = "points" - ${amount}, "updatedAt" = '${updatedAt}' WHERE "id" = ${user.id}`;
+        // Deduct points
+        console.log(`WITHDRAWAL V2 [${requestId}]: Deducting ${amount} points...`);
+        const updateSql = `UPDATE Users SET points = points - ${amount}, updatedAt = '${now}' WHERE id = ${user.id}`;
         await turso.execute(updateSql);
 
-        console.log(`💰 WITHDRAWAL V2 API [${requestId}]: Withdrawal request created successfully. ID: ${withdrawalId}`);
+        console.log(`WITHDRAWAL V2 [${requestId}]: SUCCESS`);
 
-        const responseData = {
+        res.json({
             success: true,
             message: 'Withdrawal request submitted successfully',
             withdrawalRequest: {
                 id: withdrawalId,
                 amount: amount,
                 status: 'pending',
-                requestDate: requestDate
+                requestDate: now
             },
             remainingPoints: user.points - amount,
             requestId,
-            timestamp: new Date().toISOString()
-        };
-
-        console.log(`💰 WITHDRAWAL V2 API [${requestId}]: Request completed successfully`);
-        res.json(responseData);
+            timestamp: now
+        });
 
     } catch (error) {
-        console.error(`💰 WITHDRAWAL V2 API [${requestId}]: Request failed:`, {
-            message: error.message,
-            stack: error.stack,
-            name: error.name,
-            code: error.code
-        });
+        console.error(`WITHDRAWAL V2 [${requestId}]: FAILED:`, error.message);
+        console.error(`WITHDRAWAL V2 [${requestId}]: Error name:`, error.name);
+        console.error(`WITHDRAWAL V2 [${requestId}]: Error code:`, error.code);
+        console.error(`WITHDRAWAL V2 [${requestId}]: Stack:`, error.stack);
 
         res.status(500).json({
             success: false,
             message: 'Internal server error',
             requestId,
             timestamp: new Date().toISOString(),
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+            debug: error.message
         });
     }
 });
