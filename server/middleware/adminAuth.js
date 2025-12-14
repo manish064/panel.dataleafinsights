@@ -1,124 +1,96 @@
 const jwt = require('jsonwebtoken');
 const { Admin, AuditLog } = require('../models');
 
+// Safe wrapper for audit logging - never throws
+const safeLogAudit = async (logFn, params) => {
+  try {
+    await logFn(params);
+  } catch (error) {
+    console.error('Audit log failed (non-blocking):', error.message);
+  }
+};
+
 // Middleware to authenticate admin users
 const authenticateAdmin = async (req, res, next) => {
   try {
     const token = req.header('Authorization')?.replace('Bearer ', '');
-    
+
     if (!token) {
-      await AuditLog.logSystemEvent({
+      safeLogAudit(AuditLog.logSystemEvent.bind(AuditLog), {
         action: 'UNAUTHORIZED_ACCESS_ATTEMPT',
         resource: 'admin_auth',
         level: 'warning',
         description: 'Admin authentication attempted without token',
-        metadata: {
-          endpoint: req.originalUrl,
-          method: req.method,
-          ipAddress: req.ip,
-          userAgent: req.get('User-Agent')
-        },
-        success: false,
-        errorMessage: 'No authentication token provided'
+        success: false
       });
-      
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Access denied. No token provided.' 
+
+      return res.status(401).json({
+        success: false,
+        message: 'Access denied. No token provided.'
       });
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
+
     if (decoded.type !== 'admin') {
-      await AuditLog.logSystemEvent({
+      safeLogAudit(AuditLog.logSystemEvent.bind(AuditLog), {
         action: 'INVALID_TOKEN_TYPE',
         resource: 'admin_auth',
         level: 'warning',
-        description: 'Non-admin token used for admin authentication',
-        metadata: {
-          tokenType: decoded.type,
-          endpoint: req.originalUrl,
-          method: req.method,
-          ipAddress: req.ip,
-          userAgent: req.get('User-Agent')
-        },
-        success: false,
-        errorMessage: 'Invalid token type for admin access'
+        success: false
       });
-      
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Access denied. Invalid token type.' 
+
+      return res.status(401).json({
+        success: false,
+        message: 'Access denied. Invalid token type.'
       });
     }
 
     const admin = await Admin.findByPk(decoded.id);
-    
+
     if (!admin) {
-      await AuditLog.logSystemEvent({
+      safeLogAudit(AuditLog.logSystemEvent.bind(AuditLog), {
         action: 'ADMIN_NOT_FOUND',
         resource: 'admin_auth',
         level: 'warning',
-        description: 'Authentication attempted with non-existent admin ID',
-        metadata: {
-          adminId: decoded.id,
-          endpoint: req.originalUrl,
-          method: req.method,
-          ipAddress: req.ip,
-          userAgent: req.get('User-Agent')
-        },
-        success: false,
-        errorMessage: 'Admin account not found'
+        success: false
       });
-      
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Access denied. Admin not found.' 
+
+      return res.status(401).json({
+        success: false,
+        message: 'Access denied. Admin not found.'
       });
     }
 
     if (!admin.isActive) {
-      await AuditLog.logAdminAction({
+      safeLogAudit(AuditLog.logAdminAction.bind(AuditLog), {
         action: 'INACTIVE_ADMIN_ACCESS_ATTEMPT',
         resource: 'admin_auth',
         adminId: admin.id,
         adminEmail: admin.email,
-        ipAddress: req.ip,
-        userAgent: req.get('User-Agent'),
-        method: req.method,
-        endpoint: req.originalUrl,
         level: 'warning',
-        description: 'Inactive admin attempted to access system',
-        success: false,
-        errorMessage: 'Admin account is inactive'
+        success: false
       });
-      
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Access denied. Account is inactive.' 
+
+      return res.status(401).json({
+        success: false,
+        message: 'Access denied. Account is inactive.'
       });
     }
 
     if (admin.isLocked()) {
-      await AuditLog.logAdminAction({
+      safeLogAudit(AuditLog.logAdminAction.bind(AuditLog), {
         action: 'LOCKED_ADMIN_ACCESS_ATTEMPT',
         resource: 'admin_auth',
         adminId: admin.id,
         adminEmail: admin.email,
-        ipAddress: req.ip,
-        userAgent: req.get('User-Agent'),
-        method: req.method,
-        endpoint: req.originalUrl,
         level: 'warning',
-        description: 'Locked admin attempted to access system',
-        success: false,
-        errorMessage: 'Admin account is locked due to failed login attempts'
+        success: false
       });
-      
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Access denied. Account is temporarily locked.' 
+
+      return res.status(401).json({
+        success: false,
+        message: 'Access denied. Account is temporarily locked.'
       });
     }
 
@@ -126,39 +98,32 @@ const authenticateAdmin = async (req, res, next) => {
     req.adminId = admin.id;
     next();
   } catch (error) {
-    await AuditLog.logSystemEvent({
+    safeLogAudit(AuditLog.logSystemEvent.bind(AuditLog), {
       action: 'ADMIN_AUTH_ERROR',
       resource: 'admin_auth',
       level: 'error',
-      description: 'Error during admin authentication',
-      metadata: {
-        endpoint: req.originalUrl,
-        method: req.method,
-        ipAddress: req.ip,
-        userAgent: req.get('User-Agent')
-      },
       success: false,
       errorMessage: error.message
     });
-    
+
     if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Access denied. Invalid token.' 
+      return res.status(401).json({
+        success: false,
+        message: 'Access denied. Invalid token.'
       });
     }
-    
+
     if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Access denied. Token expired.' 
+      return res.status(401).json({
+        success: false,
+        message: 'Access denied. Token expired.'
       });
     }
-    
+
     console.error('Admin authentication error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Internal server error during authentication.' 
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error during authentication.'
     });
   }
 };
@@ -168,63 +133,36 @@ const requirePermission = (resource, action) => {
   return async (req, res, next) => {
     try {
       const admin = req.admin;
-      
+
       if (!admin) {
-        return res.status(401).json({ 
-          success: false, 
-          message: 'Authentication required.' 
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required.'
         });
       }
 
       if (!admin.hasPermission(resource, action)) {
-        await AuditLog.logAdminAction({
+        safeLogAudit(AuditLog.logAdminAction.bind(AuditLog), {
           action: 'PERMISSION_DENIED',
           resource: resource,
           adminId: admin.id,
           adminEmail: admin.email,
-          ipAddress: req.ip,
-          userAgent: req.get('User-Agent'),
-          method: req.method,
-          endpoint: req.originalUrl,
           level: 'warning',
-          description: `Admin attempted ${action} on ${resource} without permission`,
-          metadata: {
-            requiredPermission: `${resource}:${action}`,
-            adminRole: admin.role,
-            adminPermissions: admin.permissions
-          },
-          success: false,
-          errorMessage: 'Insufficient permissions'
+          success: false
         });
-        
-        return res.status(403).json({ 
-          success: false, 
-          message: 'Access denied. Insufficient permissions.' 
+
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. Insufficient permissions.'
         });
       }
 
       next();
     } catch (error) {
-      await AuditLog.logSystemEvent({
-        action: 'PERMISSION_CHECK_ERROR',
-        resource: resource,
-        level: 'error',
-        description: 'Error during permission check',
-        metadata: {
-          endpoint: req.originalUrl,
-          method: req.method,
-          ipAddress: req.ip,
-          userAgent: req.get('User-Agent'),
-          requiredPermission: `${resource}:${action}`
-        },
-        success: false,
-        errorMessage: error.message
-      });
-      
       console.error('Permission check error:', error);
-      res.status(500).json({ 
-        success: false, 
-        message: 'Internal server error during permission check.' 
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error during permission check.'
       });
     }
   };
@@ -235,11 +173,11 @@ const requireRole = (minimumRole) => {
   return async (req, res, next) => {
     try {
       const admin = req.admin;
-      
+
       if (!admin) {
-        return res.status(401).json({ 
-          success: false, 
-          message: 'Authentication required.' 
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required.'
         });
       }
 
@@ -248,89 +186,61 @@ const requireRole = (minimumRole) => {
       const requiredRoleLevel = roleHierarchy[minimumRole] || 0;
 
       if (adminRoleLevel < requiredRoleLevel) {
-        await AuditLog.logAdminAction({
+        safeLogAudit(AuditLog.logAdminAction.bind(AuditLog), {
           action: 'ROLE_ACCESS_DENIED',
           resource: 'admin_role',
           adminId: admin.id,
           adminEmail: admin.email,
-          ipAddress: req.ip,
-          userAgent: req.get('User-Agent'),
-          method: req.method,
-          endpoint: req.originalUrl,
           level: 'warning',
-          description: `Admin with role ${admin.role} attempted to access ${minimumRole} required endpoint`,
-          metadata: {
-            adminRole: admin.role,
-            requiredRole: minimumRole,
-            adminRoleLevel,
-            requiredRoleLevel
-          },
-          success: false,
-          errorMessage: 'Insufficient role level'
+          success: false
         });
-        
-        return res.status(403).json({ 
-          success: false, 
-          message: 'Access denied. Insufficient role level.' 
+
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. Insufficient role level.'
         });
       }
 
       next();
     } catch (error) {
-      await AuditLog.logSystemEvent({
-        action: 'ROLE_CHECK_ERROR',
-        resource: 'admin_role',
-        level: 'error',
-        description: 'Error during role check',
-        metadata: {
-          endpoint: req.originalUrl,
-          method: req.method,
-          ipAddress: req.ip,
-          userAgent: req.get('User-Agent'),
-          requiredRole: minimumRole
-        },
-        success: false,
-        errorMessage: error.message
-      });
-      
       console.error('Role check error:', error);
-      res.status(500).json({ 
-        success: false, 
-        message: 'Internal server error during role check.' 
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error during role check.'
       });
     }
   };
 };
 
-// Middleware to log admin actions
+// Middleware to log admin actions (completely fail-safe)
 const logAdminAction = (action, resource) => {
   return async (req, res, next) => {
     const startTime = Date.now();
-    
+
     // Store original res.json to capture response
     const originalJson = res.json;
     let responseData = null;
-    
-    res.json = function(data) {
+
+    res.json = function (data) {
       responseData = data;
       return originalJson.call(this, data);
     };
-    
+
     // Store original res.end to capture when response is sent
     const originalEnd = res.end;
-    res.end = function(...args) {
+    res.end = function (...args) {
       const duration = Date.now() - startTime;
-      
-      // Log the action after response is sent
+
+      // Log the action after response is sent (completely non-blocking)
       setImmediate(async () => {
         try {
           const admin = req.admin;
           const success = res.statusCode >= 200 && res.statusCode < 400;
-          
+
           await AuditLog.logAdminAction({
             action,
             resource,
-            resourceId: req.params.id || req.body.id || null,
+            resourceId: req.params.id || req.body?.id || null,
             adminId: admin?.id,
             adminEmail: admin?.email,
             ipAddress: req.ip,
@@ -340,25 +250,18 @@ const logAdminAction = (action, resource) => {
             statusCode: res.statusCode,
             level: success ? 'info' : 'warning',
             description: `Admin ${action} on ${resource}`,
-            oldValues: req.originalData || null,
-            newValues: req.body || null,
-            metadata: {
-              query: req.query,
-              params: req.params,
-              responseData: success ? responseData : null
-            },
             duration,
-            success,
-            errorMessage: success ? null : responseData?.message || 'Action failed'
+            success
           });
         } catch (error) {
-          console.error('Failed to log admin action:', error);
+          // Never throw - just log and continue
+          console.error('Failed to log admin action (non-blocking):', error.message);
         }
       });
-      
+
       return originalEnd.apply(this, args);
     };
-    
+
     next();
   };
 };
